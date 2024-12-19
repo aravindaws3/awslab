@@ -1,0 +1,82 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Setup S3 event to trigger SNS and forward to C2's SQS queue.
+
+Parameters:
+  AppPrefix:
+    Type: String
+    Description: Application Prefix for resource naming
+
+Resources:
+  # SNS Topic
+  advtAlarmTopic:
+    Type: 'AWS::SNS::Topic'
+    Properties:
+      TopicName: !Sub "${AppPrefix}-alarm-${AWS::Region}-notification"
+      DisplayName: !Sub "${AppPrefix}-alarm-${AWS::Region}-notification"
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${AppPrefix}-alarm-${AWS::Region}-notification"
+
+  # SNS Topic Policy
+  TopicPolicy:
+    Type: 'AWS::SNS::TopicPolicy'
+    Properties:
+      PolicyDocument:
+        Version: "2008-10-17"
+        Id: "default_policy_ID"
+        Statement:
+          # Allow S3 to Publish to SNS
+          - Sid: "SNSPubAccess"
+            Effect: "Allow"
+            Principal:
+              Service: "s3.amazonaws.com"
+            Action: "sns:Publish"
+            Resource: !Ref advtAlarmTopic
+            Condition:
+              ArnLike:
+                aws:SourceArn: "arn:aws:s3:::s3-ampf-us-east-1-suma-py-c1"  # Replace with your bucket ARN
+              StringEquals:
+                aws:SourceAccount: "284376082762"  # Replace with C1 Account ID
+
+          # Allow C2 to Subscribe to SNS Topic
+          - Sid: "AllowCrossAccountSubscription"
+            Effect: "Allow"
+            Principal:
+              AWS: "arn:aws:iam::987654321098:root"  # Replace with C2 Account ID
+            Action: "sns:Subscribe"
+            Resource: !Ref advtAlarmTopic
+      Topics:
+        - !Ref advtAlarmTopic
+
+  # S3 Bucket
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: s3-ampf-us-east-1-suma-py-c1
+      NotificationConfiguration:
+        TopicConfigurations:
+          - Event: "s3:ObjectCreated:*"
+            Topic: !Ref advtAlarmTopic
+
+  # S3 Bucket Policy for SNS
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: "AllowS3Events"
+            Effect: "Allow"
+            Principal:
+              Service: sns.amazonaws.com
+            Action: "s3:PutObject"
+            Resource: !Sub "arn:aws:s3:::${S3Bucket}/*"
+
+Outputs:
+  S3BucketName:
+    Description: The name of the S3 bucket
+    Value: !Ref S3Bucket
+  SNSTopicARN:
+    Description: The ARN of the SNS topic
+    Value: !Ref advtAlarmTopic
