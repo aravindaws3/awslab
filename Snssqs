@@ -1,0 +1,110 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Application IAM role and policies 
+
+Parameters:
+  AssetId:
+    Description: A1335798
+    Type: String
+  environment:
+    Type: String
+    Description: "Environment (c0/c1/c2/c3)"
+    Default: c0
+    AllowedValues:
+      - c0
+      - c1
+      - c2
+      - c3
+  PrimaryOwnerEmployeeId:
+    Type: String
+    Description: ${PrimaryOwnerEmployeeId}
+  BackupOwnerEmployeeId:
+    Type: String
+    Description: ${BackupOwnerEmployeeId}
+  AppPrefix:
+    Type: String
+    Description: AppPrefix
+
+Resources:
+  advtAlarmTopic:
+    Type: 'AWS::SNS::Topic'
+    Properties:
+      TopicName: !Sub "${AppPrefix}-alarm-${AWS::Region}-notification"
+      DisplayName: !Sub "${AppPrefix}-alarm-${AWS::Region}-notification"
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${AppPrefix}-alarm-${AWS::Region}-notification"
+
+  TopicPolicy:
+    Type: 'AWS::SNS::TopicPolicy'
+    Properties:
+      PolicyDocument:
+        Version: "2008-10-17"
+        Id: "__default_policy_ID"
+        Statement:
+          # Allow S3 to Publish to SNS
+          - Sid: "SNSPubAccess"
+            Effect: "Allow"
+            Principal:
+              Service: "s3.amazonaws.com"
+            Action: ["SNS:Publish"]
+            Resource: !Ref advtAlarmTopic
+            Condition:
+              ArnLike:
+                aws:SourceArn: "arn:aws:s3:::s3-ampf-us-east-1-suma-py-c1"  # Replace with your bucket ARN
+              StringEquals:
+                aws:SourceAccount: "284376082762"  # Replace with C1's Account ID
+
+          # Allow SQS from Account C2 to Subscribe
+          - Sid: "AllowCrossAccountSubscriptionForC2"
+            Effect: "Allow"
+            Principal:
+              AWS: "arn:aws:iam::987654321098:root"  # Replace with C2 Account ID
+            Action: "sns:Subscribe"
+            Resource: !Ref advtAlarmTopic
+
+      Topics:
+        - !Ref advtAlarmTopic
+
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: s3-ampf-us-east-1-suma-py-c1
+
+  S3BucketNotificationConfiguration:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref S3Bucket
+      NotificationConfiguration:
+        TopicConfigurations:
+          - Event: "s3:ObjectCreated:*"
+            Topic: !Ref advtAlarmTopic
+
+  EmailSub1:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: 'AravindKumar.Jayakumar@ampf.com'
+      Protocol: email
+      TopicArn: !Ref advtAlarmTopic
+
+  SQSQueueInC2:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: c2-sqs-queue
+
+  SQSQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref SQSQueueInC2
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: "AllowSNSMessages"
+            Effect: "Allow"
+            Principal:
+              Service: sns.amazonaws.com
+            Action: "sqs:SendMessage"
+            Resource: !GetAtt SQSQueueInC2.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Ref advtAlarmTopic
