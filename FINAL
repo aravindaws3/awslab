@@ -97,7 +97,7 @@ Resources:
           - Sid: "AllowSpecificRoleInC2"
             Effect: "Allow"
             Principal:
-              AWS: "arn:aws:iam::987654321098:role/C2SpecificRole"  # Replace with C2 Role ARN
+              AWS: "arn:aws:iam::238793295411:role/advt*"  # Replace with C2 Role ARN
             Action: "sns:Subscribe"
             Resource: !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${AppPrefix}-alarm-${AWS::Region}-notification"
       Topics:
